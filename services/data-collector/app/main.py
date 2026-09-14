@@ -1,17 +1,40 @@
+import json
+import os
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from google.cloud import pubsub_v1
+
 
 app = FastAPI(
     title="Global Disaster Monitoring - Data Collector",
-    version="0.1.0",
+    version="0.2.0",
 )
+
 
 USGS_EARTHQUAKE_URL = (
     "https://earthquake.usgs.gov/earthquakes/feed/v1.0/"
     "summary/all_day.geojson"
+)
+
+PROJECT_ID = os.getenv(
+    "GOOGLE_CLOUD_PROJECT",
+    "global-disaster-monitoring",
+)
+
+PUBSUB_TOPIC = os.getenv(
+    "PUBSUB_TOPIC",
+    "disaster-events",
+)
+
+
+publisher = pubsub_v1.PublisherClient()
+
+topic_path = publisher.topic_path(
+    PROJECT_ID,
+    PUBSUB_TOPIC,
 )
 
 
@@ -19,13 +42,16 @@ USGS_EARTHQUAKE_URL = (
 def root() -> dict[str, str]:
     return {
         "service": "disaster-data-collector",
+        "version": "0.2.0",
         "status": "running",
     }
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+    }
 
 
 @app.get("/earthquakes")
@@ -54,28 +80,32 @@ async def get_earthquakes() -> dict[str, Any]:
             event_time = properties.get("time")
 
             occurred_at = None
+
             if event_time is not None:
                 occurred_at = datetime.fromtimestamp(
                     event_time / 1000,
                     tz=timezone.utc,
                 ).isoformat()
 
-            earthquakes.append(
-                {
-                    "event_id": feature.get("id"),
-                    "type": "EARTHQUAKE",
-                    "title": properties.get("title"),
-                    "magnitude": magnitude,
-                    "severity": calculate_severity(magnitude),
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "depth_km": depth,
-                    "place": properties.get("place"),
-                    "occurred_at": occurred_at,
-                    "source": "USGS",
-                    "source_url": properties.get("url"),
-                }
-            )
+            event = {
+                "event_id": feature.get("id"),
+                "type": "EARTHQUAKE",
+                "title": properties.get("title"),
+                "magnitude": magnitude,
+                "severity": calculate_severity(magnitude),
+                "latitude": latitude,
+                "longitude": longitude,
+                "depth_km": depth,
+                "place": properties.get("place"),
+                "occurred_at": occurred_at,
+                "source": "USGS",
+                "source_url": properties.get("url"),
+            }
+
+            message_id = publish_event(event)
+            event["message_id"] = message_id
+
+            earthquakes.append(event)
 
         return {
             "source": "USGS",
@@ -89,6 +119,25 @@ async def get_earthquakes() -> dict[str, Any]:
             status_code=502,
             detail=f"Unable to retrieve earthquake data: {error}",
         ) from error
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to process earthquake data: {error}",
+        ) from error
+
+
+def publish_event(event: dict[str, Any]) -> str:
+    message_data = json.dumps(event).encode("utf-8")
+
+    future = publisher.publish(
+        topic_path,
+        message_data,
+        event_type=event["type"],
+        source=event["source"],
+    )
+
+    return future.result(timeout=15)
 
 
 def calculate_severity(magnitude: float | None) -> str:
