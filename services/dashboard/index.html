@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Disaster Monitoring</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f7fb;
+      color: #172033;
+    }
+
+    header {
+      background: #172033;
+      color: white;
+      padding: 24px;
+    }
+
+    header h1 {
+      margin: 0 0 8px;
+    }
+
+    header p {
+      margin: 0;
+      color: #cbd5e1;
+    }
+
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    button,
+    select {
+      padding: 10px 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: white;
+      cursor: pointer;
+    }
+
+    button {
+      background: #2563eb;
+      color: white;
+      border-color: #2563eb;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #64748b;
+    }
+
+    .card strong {
+      font-size: 32px;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      min-width: 0;
+    }
+
+    .panel h2 {
+      margin-top: 0;
+    }
+
+    .event {
+      border-bottom: 1px solid #e2e8f0;
+      padding: 14px 0;
+    }
+
+    .event:last-child {
+      border-bottom: none;
+    }
+
+    .event-title {
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    .event-meta {
+      color: #64748b;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .severity {
+      display: inline-block;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-left: 6px;
+    }
+
+    .critical {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .high {
+      background: #ffedd5;
+      color: #9a3412;
+    }
+
+    .medium {
+      background: #fef9c3;
+      color: #854d0e;
+    }
+
+    .low {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status {
+      margin-bottom: 20px;
+      color: #475569;
+    }
+
+    @media (max-width: 800px) {
+      .content {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Global Disaster Monitoring</h1>
+    <p>Real-time earthquake event monitoring dashboard</p>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <select id="severityFilter">
+        <option value="">All severities</option>
+        <option value="CRITICAL">Critical</option>
+        <option value="HIGH">High</option>
+        <option value="MEDIUM">Medium</option>
+        <option value="LOW">Low</option>
+      </select>
+
+      <button id="refreshButton">Refresh events</button>
+    </div>
+
+    <div id="status" class="status">
+      Loading events...
+    </div>
+
+    <section class="cards">
+      <div class="card">
+        <h3>Total events</h3>
+        <strong id="totalCount">0</strong>
+      </div>
+
+      <div class="card">
+        <h3>Critical</h3>
+        <strong id="criticalCount">0</strong>
+      </div>
+
+      <div class="card">
+        <h3>High</h3>
+        <strong id="highCount">0</strong>
+      </div>
+
+      <div class="card">
+        <h3>Medium</h3>
+        <strong id="mediumCount">0</strong>
+      </div>
+    </section>
+
+    <section class="content">
+      <div class="panel">
+        <h2>Recent incidents</h2>
+        <div id="eventsList">No events loaded.</div>
+      </div>
+
+      <div class="panel">
+        <h2>Locations</h2>
+        <div id="locationsList">No locations loaded.</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const API_URL = "https://event-processor-mjmv5nmclq-lz.a.run.app";
+
+    const totalCount = document.getElementById("totalCount");
+    const criticalCount = document.getElementById("criticalCount");
+    const highCount = document.getElementById("highCount");
+    const mediumCount = document.getElementById("mediumCount");
+    const eventsList = document.getElementById("eventsList");
+    const locationsList = document.getElementById("locationsList");
+    const statusElement = document.getElementById("status");
+    const severityFilter = document.getElementById("severityFilter");
+    const refreshButton = document.getElementById("refreshButton");
+
+    async function loadEvents() {
+      statusElement.textContent = "Loading events...";
+
+      const severity = severityFilter.value;
+      const query = severity
+        ? `/events?severity=${encodeURIComponent(severity)}&limit=100`
+        : "/events?limit=100";
+
+      try {
+        const response = await fetch(`${API_URL}${query}`);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const events = data.events || [];
+
+        updateSummary(events);
+        renderEvents(events);
+        renderLocations(events);
+
+        statusElement.textContent =
+          `Loaded ${events.length} event(s).`;
+      } catch (error) {
+        console.error(error);
+        statusElement.textContent =
+          "Unable to load events. Check the API URL and Cloud Run access.";
+      }
+    }
+
+    function updateSummary(events) {
+      totalCount.textContent = events.length;
+      criticalCount.textContent =
+        events.filter(event => event.severity === "CRITICAL").length;
+      highCount.textContent =
+        events.filter(event => event.severity === "HIGH").length;
+      mediumCount.textContent =
+        events.filter(event => event.severity === "MEDIUM").length;
+    }
+
+    function renderEvents(events) {
+      if (events.length === 0) {
+        eventsList.textContent = "No events found.";
+        return;
+      }
+
+      eventsList.innerHTML = events.map(event => `
+        <div class="event">
+          <div class="event-title">
+            ${escapeHtml(event.title || event.place || "Earthquake")}
+            <span class="severity ${(event.severity || "LOW").toLowerCase()}">
+              ${escapeHtml(event.severity || "UNKNOWN")}
+            </span>
+          </div>
+
+          <div class="event-meta">
+            Magnitude: ${escapeHtml(String(event.magnitude ?? "N/A"))}<br>
+            Location: ${escapeHtml(event.place || "Unknown")}<br>
+            Source: ${escapeHtml(event.source || "Unknown")}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderLocations(events) {
+      if (events.length === 0) {
+        locationsList.textContent = "No locations found.";
+        return;
+      }
+
+      locationsList.innerHTML = events.map(event => `
+        <div class="event">
+          <div class="event-title">
+            ${escapeHtml(event.place || "Unknown location")}
+          </div>
+
+          <div class="event-meta">
+            Latitude: ${escapeHtml(String(event.latitude))}<br>
+            Longitude: ${escapeHtml(String(event.longitude))}<br>
+            Depth: ${escapeHtml(String(event.depth_km ?? "N/A"))} km
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function escapeHtml(value) {
+      return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    refreshButton.addEventListener("click", loadEvents);
+    severityFilter.addEventListener("change", loadEvents);
+
+    loadEvents();
+  </script>
+</body>
+</html>

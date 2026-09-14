@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import firestore
 
 
@@ -14,6 +15,14 @@ logger = logging.getLogger("event-processor")
 app = FastAPI(
     title="Global Disaster Monitoring - Event Processor",
     version="0.2.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 db = firestore.Client()
